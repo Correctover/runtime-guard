@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "correctover-runtime-guard"
-version = "1.1.1"
-readme = "README.md"
+version = "1.1.2"
 description = "Real-time RCE/SSRF/credential leak interception for AI agents — 22µs P50, 99.7% detection rate. MCP Server mode with diagnose_error, fault patterns, repair suggestions."
+readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Correctover", email = "wangguigui@correctover.com" }]
 keywords = ["runtime-guard", "rce", "ssrf", "credential-leak", "mcp", "ai-agent", "correctover", "security", "guardrail", "interception", "real-time"]
