@@ -1,0 +1,5 @@
+name: correctover-runtime-guard
+description: Runtime RCE/SSRF/Env leak interception — 22µs P50 via GuardrailProvider
+version: 1.0.0
+runtime: python
+entry: correctover-runtime-guard

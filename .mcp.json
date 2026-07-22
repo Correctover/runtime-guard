@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "correctover-runtime-guard": {
+      "command": "correctover-runtime-guard",
+      "args": ["start", "--format", "json"]
+    }
+  }
+}

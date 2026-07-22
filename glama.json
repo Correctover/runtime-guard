@@ -1,0 +1,15 @@
+{
+  "$schema": "https://glama.ai/schema/glama.json",
+  "name": "correctover-runtime-guard",
+  "displayName": "Correctover Runtime Guard — Real-time RCE/SSRF/Env Leak Interception",
+  "description": "Runtime guardrail for AI Agent tool calls. Intercept RCE, SSRF, and environment variable leaks at 22µs P50. MCP Server mode with diagnose_error, get_fault_pattern, and get_repair_suggestion tools.",
+  "homepage": "https://correctover.com/agents/runtime-guard",
+  "category": "Security",
+  "license": "Apache-2.0",
+  "tags": ["runtime", "guard", "rce", "ssrf", "env-leak", "mcp", "agent-security", "correctover", "guardrail"],
+  "pricing": {
+    "model": "freemium",
+    "description": "Enterprise $1,999/mo. Free: 1,500 calls/month (50/day).",
+    "free_tier": "1,500 calls/month (50/day)"
+  }
+}
