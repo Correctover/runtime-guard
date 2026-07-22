@@ -4,7 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "correctover-runtime-guard"
-version = "1.1.0"
+version = "1.1.1"
+readme = "README.md"
 description = "Runtime RCE/SSRF/Env leak interception — 22µs P50 via correctover GuardrailProvider"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Correctover", email = "wangguigui@correctover.com" }]
