@@ -14,9 +14,10 @@ from typing import Optional
 import click
 
 from .guard import RuntimeGuard, FAULT_PATTERNS
+from .license import LicenseValidator, check_and_record, LicenseExceededError
 
-VERSION = "1.0.0"
-CTA_URL = "https://correctover.com"
+VERSION = "1.1.0"
+CTA_URL = "https://correctover.com/checkout"
 PRICING = "$1,999/month (Enterprise)"
 LATENCY_P50 = "22µs"
 
@@ -38,6 +39,19 @@ def cli():
 @click.option("--port", default=8080, help="Port for SSE/HTTP transport")
 def start(transport: str, host: str, port: int):
     """Start the Runtime Guard MCP server."""
+    # License check
+    license_key = LicenseValidator.get_license_from_env()
+    validator = LicenseValidator("correctover-runtime-guard")
+    if license_key:
+        validator.set_license_key(license_key)
+    status = validator.record_call()
+    tier = status.get('tier', 'free')
+    remaining = status.get('calls_remaining', 0)
+    if tier == 'free':
+        click.echo('Free tier: {} calls remaining today ({}/{})'.format(remaining, status['calls_today'], validator.FREE_LIMIT_PER_DAY), err=True)
+        click.echo('   Upgrade: https://correctover.com/checkout', err=True)
+    elif tier == 'pro':
+        click.echo('Pro license active - unlimited calls', err=True)
     GREEN = "\033[92m"
     CYAN = "\033[96m"
     BOLD = "\033[1m"
