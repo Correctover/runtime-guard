@@ -340,18 +340,18 @@ class LicenseValidator:
         
         encoded = parts[2]
         
-        # Decode base64url
+        # FC key format: base64url(json_payload).hmac_hex
+        # The "." separator is NOT a base64 char — split BEFORE decoding
+        if "." not in encoded:
+            return False
+        b64_part, sig_hex = encoded.rsplit(".", 1)
+        
+        # Decode base64url payload
         try:
-            padded = encoded + "=" * (4 - len(encoded) % 4) if len(encoded) % 4 else encoded
-            decoded = _b64.urlsafe_b64decode(padded).decode("utf-8")
+            padded = b64_part + "=" * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
+            payload_str = _b64.urlsafe_b64decode(padded).decode("utf-8")
         except Exception:
             return False
-        
-        # Split payload and signature
-        if "." not in decoded:
-            return False
-        
-        payload_str, sig_hex = decoded.rsplit(".", 1)
         
         # Verify HMAC signature
         expected = hmac.new(_NB_SIGNING_KEY, payload_str.encode(), hashlib.sha256).hexdigest()
