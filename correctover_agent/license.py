@@ -72,9 +72,31 @@ def _derive_cv_signing_key() -> bytes:
     return hashlib.sha256(raw).digest()
 
 
+
 _SIGNING_KEY = _derive_signing_key()
 _CV_SIGNING_KEY = _derive_cv_signing_key()
 
+
+def _derive_nb_signing_key() -> bytes:
+    """Derive NB- (Alibaba Cloud FC) key signing key.
+    
+    Matches fc_license_api.py when NB_HMAC_SECRET is set to the hex of this key.
+    """
+    parts = [
+        b"neuralbridge",
+        b"license",
+        b"hmac",
+        b"v2",
+        b"2026",
+    ]
+    raw = b""
+    for i, p in enumerate(parts):
+        shift = (i * 2) % max(len(p), 1)
+        rotated = p[-shift:] + p[:-shift] if shift else p
+        raw += rotated
+    return hashlib.sha256(raw).digest()
+
+_NB_SIGNING_KEY = _derive_nb_signing_key()
 
 # ---------------------------------------------------------------------------
 # State file integrity
@@ -216,6 +238,10 @@ class LicenseValidator:
         if key.startswith("CV-"):
             return self._verify_cv_key(key)
 
+        # NB- format: Alibaba Cloud FC payment system
+        if key.startswith("NB-"):
+            return self._verify_nb_key(key)
+
         return False
 
     def _verify_cov_key(self, key: str) -> bool:
@@ -290,6 +316,58 @@ class LicenseValidator:
         except Exception:
             return False
 
+        return True
+
+
+    def _verify_nb_key(self, key: str) -> bool:
+        """Verify NB- format key (Alibaba Cloud FC payment).
+        
+        Format: NB-{TIER}-{base64url(json_payload.hmac_hex)}
+        Verification: HMAC-SHA256 with derived NB signing key + expiry check.
+        """
+        import base64 as _b64
+        
+        # Extract tier and payload
+        parts = key.split("-", 2)
+        if len(parts) < 3 or parts[0] != "NB":
+            return False
+        
+        tier_code = parts[1]
+        tier_map = {"PRO": "pro", "ENT": "enterprise", "TRL": "trial",
+                    "MON": "monthly", "ANN": "annual", "LTM": "lifetime"}
+        if tier_code not in tier_map:
+            return False
+        
+        encoded = parts[2]
+        
+        # Decode base64url
+        try:
+            padded = encoded + "=" * (4 - len(encoded) % 4) if len(encoded) % 4 else encoded
+            decoded = _b64.urlsafe_b64decode(padded).decode("utf-8")
+        except Exception:
+            return False
+        
+        # Split payload and signature
+        if "." not in decoded:
+            return False
+        
+        payload_str, sig_hex = decoded.rsplit(".", 1)
+        
+        # Verify HMAC signature
+        expected = hmac.new(_NB_SIGNING_KEY, payload_str.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig_hex, expected):
+            return False
+        
+        # Parse payload and check expiry
+        try:
+            payload = json.loads(payload_str)
+            expires = payload.get("e", 0)
+            # e=0 means lifetime (no expiry)
+            if expires != 0 and time.time() > expires:
+                return False
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return False
+        
         return True
 
     @staticmethod
