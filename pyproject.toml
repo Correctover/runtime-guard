@@ -4,17 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "correctover-runtime-guard"
-version = "1.4.0"
-description = "Real-time RCE/SSRF/credential leak interception for AI agents — 22µs P50, 99.7% detection rate. MCP Server mode with diagnose_error, fault patterns, repair suggestions."
+version = "2.0.0"
+description = "Real-time RCE/SSRF/credential leak interception for AI agents — 22µs P50, 99.7% detection rate. MCP Server mode with diagnose_error, fault patterns, repair suggestions. Pro license required for full features."
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = { text = "Proprietary Commercial License" }
 authors = [{ name = "Correctover", email = "wangguigui@correctover.com" }]
 keywords = ["runtime-guard", "rce", "ssrf", "credential-leak", "mcp", "ai-agent", "correctover", "security", "guardrail", "interception", "real-time"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Security",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
@@ -31,9 +31,11 @@ dev = ["pytest>=7.0"]
 Homepage = "https://correctover.com"
 Repository = "https://github.com/Correctover/runtime-guard"
 Issues = "https://github.com/Correctover/runtime-guard/issues"
+Pricing = "https://correctover.com/checkout"
 
 [project.scripts]
 correctover-runtime-guard = "correctover_agent.cli:cli"
+correctover = "correctover_agent.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["correctover_agent"]

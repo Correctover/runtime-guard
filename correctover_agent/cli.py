@@ -1,12 +1,8 @@
 """
-correctover-runtime-guard CLI — ammunition-driven freemium.
+correctover-runtime-guard CLI — license-enforced freemium.
 
-Powered by CCS Fault Taxonomy v2.5 cross-references:
-Runtime fault patterns map to ZDI bounty cases and verified PoCs
-8 detection patterns · 22µs P50 latency · cross-referenced with 52 bounty cases
-
-Free: unlimited diagnosis, see first 2 threats (no repair), rest hidden
-Pro: all threats + repair + live interception + auto-heal
+Free: diagnose first 2 threats, no repair strategies, no live interception
+Pro: full diagnosis + repair + live MCP interception + auto-heal
 
 Hook: "This pattern was exploited in Correctover0026 (CVSS 9.8). 3 more hidden."
 """
@@ -18,8 +14,9 @@ from typing import Optional
 import click
 
 from .guard import RuntimeGuard, FAULT_PATTERNS
+from .license import LicenseValidator, LicenseExceededError
 
-VERSION = "1.4.0"
+VERSION = "2.0.0"
 CTA_URL = "https://correctover.com/checkout"
 LATENCY_P50 = "22µs"
 FREE_THREAT_PREVIEW = 2
@@ -93,14 +90,31 @@ GUARD_AMMO = {
 }
 
 
-def _check_license():
-    from .license import LicenseValidator
-    license_key = LicenseValidator.get_license_from_env()
+def _get_license_status():
+    """Get current license status. Returns (is_pro, validator)."""
     validator = LicenseValidator("correctover-runtime-guard")
+    license_key = LicenseValidator.get_license_from_env()
     if license_key:
         validator.set_license_key(license_key)
     status = validator.check_license()
     return status["tier"] == "pro", validator
+
+
+def _require_pro():
+    """Require Pro license. Exits with error if free tier."""
+    is_pro, validator = _get_license_status()
+    if not is_pro:
+        click.echo(
+            f"\n{'━'*55}\n"
+            f"🔒 This feature requires a Pro license.\n\n"
+            f"   Free tier: limited diagnostics only\n"
+            f"   Pro tier: full scanning + repair + live interception\n\n"
+            f"   → {CTA_URL}\n"
+            f"   → export CORRECTOVER_LICENSE_KEY=<your-key>\n"
+            f"{'━'*55}\n"
+        )
+        sys.exit(1)
+    return True
 
 
 def _get_ammo(pattern_id: str) -> dict:
@@ -124,28 +138,25 @@ def cli():
 @click.option("--host", default="0.0.0.0")
 @click.option("--port", default=8080)
 def start(transport, host, port):
-    """Start the Runtime Guard MCP server."""
-    is_pro, validator = _check_license()
+    """Start the Runtime Guard MCP server. PRO REQUIRED.
 
-    GREEN = "\033[92m"; RED = "\033[91m"; CYAN = "\033[96m"
+    Live interception and auto-heal require a valid Pro license.
+    Free tier cannot start the MCP server.
+    """
+    _require_pro()
+
+    is_pro, validator = _get_license_status()
+    GREEN = "\033[92m"; CYAN = "\033[96m"
     BOLD = "\033[1m"; DIM = "\033[2m"; RESET = "\033[0m"
     BAR = "━" * 55
 
     click.echo(f"\n{BAR}")
-    click.echo(f"  {BOLD}Correctover Runtime Guard{RESET}  {'[PRO]' if is_pro else '[FREE]'}")
+    click.echo(f"  {BOLD}Correctover Runtime Guard{RESET}  [PRO]")
     click.echo(f"  Transport: {BOLD}{transport}{RESET}")
     click.echo(f"  Detection: {GREEN}{LATENCY_P50} P50{RESET}")
     click.echo(f"  Patterns:  {len(FAULT_PATTERNS)} cross-referenced with CCS v2.5 taxonomy")
     click.echo(f"  {DIM}Backed by 52 ZDI bounty cases · 8 verified PoCs · 6 CVEs{RESET}")
-    if not is_pro:
-        click.echo(f"\n  ⚠️  Free mode: diagnosis only, no live interception.")
-        click.echo(f"     Pro required for real-time blocking + auto-heal.")
     click.echo(f"{BAR}\n")
-
-    if not is_pro:
-        click.echo(f"  Running in diagnose-only mode.")
-        click.echo(f"  Threats will be detected but NOT blocked.\n")
-        click.echo(f"  🛡️  Upgrade for real-time blocking: {CTA_URL}\n")
 
     from .mcp_server import serve
     serve(transport=transport, host=host, port=port)
@@ -154,14 +165,26 @@ def start(transport, host, port):
 @cli.command()
 @click.argument("error_message")
 def diagnose(error_message):
-    """Diagnose an error message for fault patterns."""
-    is_pro, validator = _check_license()
+    """Diagnose an error message for fault patterns.
+
+    Free tier: shows first 2 threats (no repair strategies).
+    Pro tier: shows all threats with full repair + evidence.
+    """
+    is_pro, validator = _get_license_status()
 
     RED = "\033[91m"; YELLOW = "\033[93m"; GREEN = "\033[92m"
     CYAN = "\033[96m"; BOLD = "\033[1m"; DIM = "\033[2m"; RESET = "\033[0m"
     BAR = "━" * 55
 
-    guard = RuntimeGuard()
+    # Create guard with license awareness
+    guard = RuntimeGuard(require_license=False)
+    if is_pro:
+        guard._free_mode = False
+        guard._is_pro = True
+    else:
+        guard._free_mode = True
+        guard._is_pro = False
+
     events = guard.diagnose_error(error_message)
 
     click.echo(f"\n{BAR}")
@@ -172,34 +195,18 @@ def diagnose(error_message):
 
     if not events:
         click.echo(f"  {GREEN}✅ No fault patterns detected — input appears safe.{RESET}")
-        click.echo(f"\n{BAR}")
-        click.echo(f"🛡️  Stay protected with Pro:")
-        click.echo(f"   ✓ Real-time blocking (not just diagnosis)")
-        click.echo(f"   ✓ Auto-heal on detected threats")
-        click.echo(f"   ✓ Compliance audit trail")
-        click.echo(f"{BAR}")
-        click.echo(f"   → {CTA_URL}")
-        click.echo(f"{BAR}\n")
+        if not is_pro:
+            click.echo(f"\n{BAR}")
+            click.echo(f"🛡️  Stay protected with Pro:")
+            click.echo(f"   ✓ Real-time blocking (not just diagnosis)")
+            click.echo(f"   ✓ Auto-heal on detected threats")
+            click.echo(f"   ✓ Compliance audit trail")
+            click.echo(f"{BAR}")
+            click.echo(f"   → {CTA_URL}")
+            click.echo(f"{BAR}\n")
         return
 
     total = len(events)
-
-    # Ammunition summary
-    verified_count = sum(1 for e in events if _get_ammo(e.pattern.pattern_id).get("verified_poc"))
-    bounty_count = sum(1 for e in events if _get_ammo(e.pattern.pattern_id).get("bounty_cases"))
-    cve_events = [e for e in events if _get_ammo(e.pattern.pattern_id).get("cve")]
-
-    click.echo(f"  {RED}{BOLD}🚨 {total} threat pattern(s) detected{RESET}\n")
-
-    if verified_count > 0 or bounty_count > 0 or cve_events:
-        if verified_count > 0:
-            click.echo(f"  {RED}{BOLD}⚠  {verified_count} pattern(s) match verified PoC exploits{RESET}")
-        if bounty_count > 0:
-            click.echo(f"  {RED}{BOLD}⚠  {bounty_count} pattern(s) backed by real ZDI bounty cases{RESET}")
-        if cve_events:
-            cves = set(_get_ammo(e.pattern.pattern_id)["cve"] for e in cve_events if _get_ammo(e.pattern.pattern_id).get("cve"))
-            click.echo(f"  {RED}{BOLD}⚠  CVEs: {', '.join(cves)}{RESET}")
-        click.echo()
 
     if is_pro:
         # Pro: show all with repair and evidence
@@ -224,9 +231,9 @@ def diagnose(error_message):
         click.echo(f"{BAR}\n")
         return
 
-    # Free: show first N without repair, hide rest with ammunition
+    # Free: show first 2 without repair, hint at hidden ones
     shown = events[:FREE_THREAT_PREVIEW]
-    hidden = total - FREE_THREAT_PREVIEW
+    hidden_count = total - FREE_THREAT_PREVIEW
 
     for i, e in enumerate(shown, 1):
         sev_color = RED if e.pattern.severity == "CRITICAL" else YELLOW
@@ -247,43 +254,30 @@ def diagnose(error_message):
 
         click.echo(f"     🔒 Repair strategy — Pro only\n")
 
-    if hidden > 0:
-        hidden_events = events[FREE_THREAT_PREVIEW:]
-        hidden_verified = sum(1 for e in hidden_events if _get_ammo(e.pattern.pattern_id).get("verified_poc"))
-        hidden_cves = set(_get_ammo(e.pattern.pattern_id).get("cve") for e in hidden_events if _get_ammo(e.pattern.pattern_id).get("cve"))
-        hidden_critical = sum(1 for e in hidden_events if e.pattern.severity == "CRITICAL")
-
+    if hidden_count > 0:
         click.echo(f"  {'─' * 51}")
-        click.echo(f"  🔒 {hidden} additional threat(s) hidden.")
-        if hidden_critical > 0:
-            click.echo(f"     ⚠️  {hidden_critical} may be CRITICAL severity.")
-        if hidden_verified > 0:
-            click.echo(f"     ⚠️  {hidden_verified} match verified PoC exploits.")
-        if hidden_cves:
-            click.echo(f"     ⚠️  Hidden CVEs: {', '.join(hidden_cves)}")
-        click.echo(f"     {RED}These patterns were exploited in real-world targets.{RESET}\n")
-
-    click.echo(f"{BAR}")
-    click.echo(
-        f"\n{BAR}\n"
-        f"🛡️  UPGRADE TO PRO TO UNLOCK:\n"
-        f"   ✓ All {total} threat(s) ({hidden} hidden)\n"
-        f"   ✓ Repair strategies for each threat\n"
-        f"   ✓ Full ZDI bounty case details and exploit paths\n"
-        f"   ✓ Real-time blocking ({LATENCY_P50} P50)\n"
-        f"   ✓ Auto-heal (84.1% resolved automatically)\n"
-        f"   ✓ Live interception MCP server\n"
-        f"{BAR}\n"
-        f"   → {CTA_URL}\n"
-        f"   → export CORRECTOVER_LICENSE_KEY=<your-key>\n"
-        f"{BAR}\n"
-    )
+        click.echo(f"  🔒 {hidden_count} additional threat(s) hidden.")
+        click.echo(f"\n{BAR}")
+        click.echo(
+            f"\n{BAR}\n"
+            f"🛡️  UPGRADE TO PRO TO UNLOCK:\n"
+            f"   ✓ All {total} threat(s) ({hidden_count} hidden)\n"
+            f"   ✓ Repair strategies for each threat\n"
+            f"   ✓ Full ZDI bounty case details\n"
+            f"   ✓ Real-time blocking ({LATENCY_P50} P50)\n"
+            f"   ✓ Auto-heal (84.1% resolved automatically)\n"
+            f"   ✓ Live interception MCP server\n"
+            f"{BAR}\n"
+            f"   → {CTA_URL}\n"
+            f"   → export CORRECTOVER_LICENSE_KEY=<your-key>\n"
+            f"{BAR}\n"
+        )
 
 
 @cli.command()
 def stats():
     """Show guard statistics and registered patterns."""
-    is_pro, validator = _check_license()
+    is_pro, validator = _get_license_status()
 
     GREEN = "\033[92m"; RED = "\033[91m"; CYAN = "\033[96m"
     BOLD = "\033[1m"; DIM = "\033[2m"; RESET = "\033[0m"
@@ -332,6 +326,34 @@ def stats():
         )
     else:
         click.echo(f"\n{BAR}\n")
+
+
+@cli.command()
+def activate():
+    """Activate a Pro license key.
+
+    Usage: correctover activate <license-key>
+    Or:    export CORRECTOVER_LICENSE_KEY=<key>
+    """
+    is_pro, validator = _get_license_status()
+    GREEN = "\033[92m"; RED = "\033[91m"; BOLD = "\033[1m"; RESET = "\033[0m"
+    BAR = "━" * 55
+
+    if is_pro:
+        click.echo(f"\n{BAR}")
+        click.echo(f"  {GREEN}✅ Pro license active.{RESET}")
+        click.echo(f"  Key: {validator.state.get('license_key', 'N/A')[:12]}...")
+        click.echo(f"{BAR}\n")
+        return
+
+    click.echo(f"\n{BAR}")
+    click.echo(f"  {RED}No valid Pro license found.{RESET}")
+    click.echo(f"")
+    click.echo(f"  To activate:")
+    click.echo(f"    1. Purchase at {CTA_URL}")
+    click.echo(f"    2. export CORRECTOVER_LICENSE_KEY=<your-key>")
+    click.echo(f"    3. Run: correctover activate")
+    click.echo(f"{BAR}\n")
 
 
 if __name__ == "__main__":

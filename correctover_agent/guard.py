@@ -1,6 +1,10 @@
 """
 Runtime Guard Engine — RCE/SSRF/Env leak interception via correctover SDK hooks.
 22µs P50 detection latency.
+
+v2.0: License enforcement added — core scan requires valid license.
+Free tier gets limited diagnostics (first 2 patterns, no repair).
+Pro tier gets full scanning, repair, and live interception.
 """
 
 import os
@@ -117,13 +121,51 @@ FAULT_PATTERNS: list[FaultPattern] = [
 
 
 class RuntimeGuard:
-    """Runtime guard engine using correctover GuardrailProvider hooks."""
+    """Runtime guard engine using correctover GuardrailProvider hooks.
 
-    def __init__(self):
+    v2.0: License enforcement on scan/diagnose.
+    Free tier: limited to 2 detection events, no repair suggestions.
+    Pro tier: full detection + repair + live interception.
+    """
+
+    # Maximum patterns returned for free tier
+    FREE_PATTERN_LIMIT = 2
+
+    def __init__(self, require_license: bool = True):
         self.patterns = FAULT_PATTERNS
         self.stats = GuardStats()
         self._compiled: dict[str, re.Pattern] = {}
         self._block_callback: Optional[Callable] = None
+        self._require_license = require_license
+        self._license_checked = False
+        self._is_pro = False
+
+        if require_license:
+            self._check_license_enforcement()
+
+    def _check_license_enforcement(self):
+        """Check license at initialization. Raises if no valid license."""
+        from .license import LicenseValidator, LicenseExceededError
+
+        validator = LicenseValidator("correctover-runtime-guard")
+        license_key = LicenseValidator.get_license_from_env()
+        if license_key:
+            validator.set_license_key(license_key)
+
+        status = validator.check_license()
+        self._is_pro = status["tier"] == "pro"
+        self._license_checked = True
+
+        if not self._is_pro:
+            # Free tier: allow init but flag as limited
+            self._free_mode = True
+        else:
+            self._free_mode = False
+
+    @property
+    def is_pro(self) -> bool:
+        """Whether this instance has Pro license."""
+        return self._is_pro
 
     def _get_regex(self, pattern: str) -> re.Pattern:
         if pattern not in self._compiled:
@@ -131,7 +173,11 @@ class RuntimeGuard:
         return self._compiled[pattern]
 
     def scan(self, data: str, source: str = "unknown") -> list[DetectionEvent]:
-        """Scan input data against all fault patterns. Returns detected events."""
+        """Scan input data against all fault patterns.
+
+        Free tier: returns at most FREE_PATTERN_LIMIT events (no repair info).
+        Pro tier: returns all detected events with full repair info.
+        """
         events: list[DetectionEvent] = []
         t0 = time.perf_counter()
 
@@ -156,6 +202,10 @@ class RuntimeGuard:
             t1 = time.perf_counter()
             self.stats.record((t1 - t0) * 1_000_000, blocked=False)
 
+        # Free tier: limit results
+        if getattr(self, "_free_mode", False) and len(events) > self.FREE_PATTERN_LIMIT:
+            events = events[:self.FREE_PATTERN_LIMIT]
+
         return events
 
     def is_safe(self, data: str, source: str = "unknown") -> tuple[bool, list[DetectionEvent]]:
@@ -168,13 +218,42 @@ class RuntimeGuard:
         return self.scan(error_message, source="error_diagnosis")
 
     def get_fault_pattern(self, category: Optional[str] = None) -> list[FaultPattern]:
-        """Get registered fault patterns, optionally filtered by category."""
+        """Get registered fault patterns, optionally filtered by category.
+
+        Free tier: patterns returned without repair field.
+        """
         if category:
-            return [p for p in self.patterns if p.category == category.upper()]
-        return list(self.patterns)
+            patterns = [p for p in self.patterns if p.category == category.upper()]
+        else:
+            patterns = list(self.patterns)
+
+        # Free tier: strip repair info
+        if getattr(self, "_free_mode", False):
+            return [
+                FaultPattern(
+                    pattern_id=p.pattern_id,
+                    category=p.category,
+                    regex=p.regex,
+                    severity=p.severity,
+                    description=p.description,
+                    repair="[PRO ONLY] Upgrade for repair strategy",
+                )
+                for p in patterns
+            ]
+        return patterns
 
     def get_repair_suggestion(self, pattern_id: str) -> Optional[dict]:
-        """Get repair suggestion for a specific fault pattern."""
+        """Get repair suggestion for a specific fault pattern.
+
+        Free tier: returns error — repair is Pro only.
+        """
+        if getattr(self, "_free_mode", False):
+            return {
+                "found": False,
+                "error": "Repair suggestions require Pro license. "
+                         "Upgrade at https://correctover.com/checkout",
+            }
+
         for p in self.patterns:
             if p.pattern_id == pattern_id:
                 return {
